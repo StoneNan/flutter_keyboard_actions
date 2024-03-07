@@ -1,3 +1,7 @@
+## [4.3.0]
+* fix | A value of type 'OverlayState?' can't be assigned to a variable of type 'OverlayState' because 'OverlayState?' is nullable and 'OverlayState' isn't.
+* fix | Method 'getOffsetToReveal' cannot be called on 'RenderAbstractViewport?' because it is potentially null.
+
 ## [4.2.0]
 * removed unfocusing for android on keyboard change (bug). Thanks `raphire08`.
 * minor lints for flutter 3.7.3.
