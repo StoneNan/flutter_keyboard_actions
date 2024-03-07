@@ -323,7 +323,6 @@ class KeyboardActionstate extends State<KeyboardActions>
   ///
   /// Position the overlay based on the current [MediaQuery] to land above the keyboard.
   void _insertOverlay() {
-    OverlayState os = Overlay.of(context);
     _inserted = true;
     _overlayEntry = OverlayEntry(builder: (context) {
       // Update and build footer, if any
@@ -378,7 +377,7 @@ class KeyboardActionstate extends State<KeyboardActions>
         ],
       );
     });
-    os.insert(_overlayEntry!);
+    Overlay.of(context)?.insert(_overlayEntry!);
   }
 
   /// Remove the overlay bar. Call when losing focus or being dismissed.
