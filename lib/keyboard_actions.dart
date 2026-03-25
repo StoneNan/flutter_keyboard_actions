@@ -334,8 +334,10 @@ class KeyboardActionstate extends State<KeyboardActions>
     OverlayState os = Overlay.of(context);
     _inserted = true;
 
-    // Pre-calculate keyboard height to avoid first-frame flicker
-    _cachedKeyboardHeight = _getKeyboardHeight();
+    // Pre-calculate keyboard height on Android to avoid first-frame flicker
+    if (PlatformCheck.isAndroid) {
+      _cachedKeyboardHeight = _getKeyboardHeight();
+    }
 
     _overlayEntry = OverlayEntry(builder: (context) {
       // Update and build footer, if any
@@ -366,7 +368,9 @@ class KeyboardActionstate extends State<KeyboardActions>
           Positioned(
             left: 0,
             right: 0,
-            bottom: _cachedKeyboardHeight,
+            bottom: PlatformCheck.isAndroid
+                ? _cachedKeyboardHeight
+                : MediaQuery.of(context).viewInsets.bottom,
             child: Material(
               color: config!.keyboardBarColor ?? Colors.grey[200],
               elevation: config!.keyboardBarElevation ?? 20,
@@ -390,11 +394,13 @@ class KeyboardActionstate extends State<KeyboardActions>
       );
     });
     os.insert(_overlayEntry!);
-    _overlayRebuildTimer?.cancel();
-    _overlayRebuildTimer = Timer(const Duration(milliseconds: 500), () {
-      if (!mounted) return;
-      _updateOffset();
-    });
+    if (PlatformCheck.isAndroid) {
+      _overlayRebuildTimer?.cancel();
+      _overlayRebuildTimer = Timer(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
+        _updateOffset();
+      });
+    }
   }
 
   /// Remove the overlay bar. Call when losing focus or being dismissed.
@@ -419,9 +425,8 @@ class KeyboardActionstate extends State<KeyboardActions>
     _dismissAnimationNeeded = true;
   }
 
-  /// Get keyboard height using platform-appropriate method.
-  /// Android adjustResize consumes viewInsets in MediaQuery, so we read from platformDispatcher directly.
-  /// iOS uses View.of(context) to correctly support iPad multi-window.
+  /// Get keyboard height. On Android adjustResize, read from platformDispatcher
+  /// to get real viewInsets. On iOS, use View.of(context) as before.
   double _getKeyboardHeight() {
     if (PlatformCheck.isAndroid) {
       final views = WidgetsBinding.instance.platformDispatcher.views;
@@ -429,8 +434,9 @@ class KeyboardActionstate extends State<KeyboardActions>
       final view = views.first;
       return EdgeInsets.fromViewPadding(view.viewInsets, view.devicePixelRatio).bottom;
     }
-    final view = View.of(context);
-    return EdgeInsets.fromViewPadding(view.viewInsets, view.devicePixelRatio).bottom;
+    return EdgeInsets.fromViewPadding(
+            View.of(context).viewInsets, View.of(context).devicePixelRatio)
+        .bottom;
   }
 
   void _updateOffset() {
