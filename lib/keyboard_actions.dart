@@ -125,6 +125,8 @@ class KeyboardActionstate extends State<KeyboardActions>
   int? _currentIndex = 0;
   OverlayEntry? _overlayEntry;
   double _offset = 0;
+  double _cachedKeyboardHeight = 0;
+  Timer? _overlayRebuildTimer;
   PreferredSizeWidget? _currentFooter;
   bool _dismissAnimationNeeded = true;
   final _keyParent = GlobalKey();
@@ -298,7 +300,9 @@ class KeyboardActionstate extends State<KeyboardActions>
   @override
   void didChangeMetrics() {
     if (PlatformCheck.isAndroid) {
-      final value = View.of(context).viewInsets.bottom;
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      if (views.isEmpty) return;
+      final value = views.first.viewInsets.bottom;
       bool keyboardIsOpen = value > 0;
       _onKeyboardChanged(keyboardIsOpen);
       isKeyboardOpen = keyboardIsOpen;
@@ -329,13 +333,18 @@ class KeyboardActionstate extends State<KeyboardActions>
   void _insertOverlay() {
     OverlayState os = Overlay.of(context);
     _inserted = true;
+
+    // Pre-calculate keyboard height on Android to avoid first-frame flicker
+    if (PlatformCheck.isAndroid) {
+      _cachedKeyboardHeight = _getKeyboardHeight();
+    }
+
     _overlayEntry = OverlayEntry(builder: (context) {
       // Update and build footer, if any
       _currentFooter = (_currentAction!.footerBuilder != null)
           ? _currentAction!.footerBuilder!(context)
           : null;
 
-      final queryData = MediaQuery.of(context);
       return Stack(
         children: [
           if (widget.tapOutsideBehavior != TapOutsideBehavior.none ||
@@ -359,7 +368,9 @@ class KeyboardActionstate extends State<KeyboardActions>
           Positioned(
             left: 0,
             right: 0,
-            bottom: queryData.viewInsets.bottom,
+            bottom: PlatformCheck.isAndroid
+                ? _cachedKeyboardHeight
+                : MediaQuery.of(context).viewInsets.bottom,
             child: Material(
               color: config!.keyboardBarColor ?? Colors.grey[200],
               elevation: config!.keyboardBarElevation ?? 20,
@@ -383,11 +394,20 @@ class KeyboardActionstate extends State<KeyboardActions>
       );
     });
     os.insert(_overlayEntry!);
+    if (PlatformCheck.isAndroid) {
+      _overlayRebuildTimer?.cancel();
+      _overlayRebuildTimer = Timer(const Duration(milliseconds: 500), () {
+        if (!mounted) return;
+        _updateOffset();
+      });
+    }
   }
 
   /// Remove the overlay bar. Call when losing focus or being dismissed.
   void _removeOverlay({bool fromDispose = false}) async {
     _inserted = false;
+    _overlayRebuildTimer?.cancel();
+    _overlayRebuildTimer = null;
     if (_currentFooter != null && _dismissAnimationNeeded) {
       if (mounted && !fromDispose) {
         _overlayEntry?.markNeedsBuild();
@@ -403,6 +423,20 @@ class KeyboardActionstate extends State<KeyboardActions>
     _currentFooter = null;
     if (!fromDispose && _dismissAnimationNeeded) _updateOffset();
     _dismissAnimationNeeded = true;
+  }
+
+  /// Get keyboard height. On Android adjustResize, read from platformDispatcher
+  /// to get real viewInsets. On iOS, use View.of(context) as before.
+  double _getKeyboardHeight() {
+    if (PlatformCheck.isAndroid) {
+      final views = WidgetsBinding.instance.platformDispatcher.views;
+      if (views.isEmpty) return 0;
+      final view = views.first;
+      return EdgeInsets.fromViewPadding(view.viewInsets, view.devicePixelRatio).bottom;
+    }
+    return EdgeInsets.fromViewPadding(
+            View.of(context).viewInsets, View.of(context).devicePixelRatio)
+        .bottom;
   }
 
   void _updateOffset() {
@@ -421,11 +455,12 @@ class KeyboardActionstate extends State<KeyboardActions>
         ? _kBarSize
         : 0; // offset for the actions bar
 
-    final keyboardHeight = EdgeInsets.fromViewPadding(
-            View.of(context).viewInsets,
-            View.of(context).devicePixelRatio)
-        .bottom;
+    final keyboardHeight = _getKeyboardHeight();
 
+    if (_cachedKeyboardHeight != keyboardHeight) {
+      _cachedKeyboardHeight = keyboardHeight;
+      _overlayEntry?.markNeedsBuild();
+    }
     newOffset += keyboardHeight; // + offset for the system keyboard
 
     if (_currentFooter != null) {
@@ -476,6 +511,7 @@ class KeyboardActionstate extends State<KeyboardActions>
 
   @override
   void dispose() {
+    _overlayRebuildTimer?.cancel();
     clearConfig();
     _removeOverlay(fromDispose: true);
     WidgetsBinding.instance.removeObserver(this);
